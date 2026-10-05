@@ -39,20 +39,28 @@ class DouyinChat:
         if last_error is not None:
             raise last_error
         raise PageOperationError("打开聊天失败")
-
     async def _open_target_once(self, name: str) -> None:
         search = await first_visible(self.page, SEARCH_INPUTS, self.timeout_ms)
-        await search.click()
-        await search.fill("")
-        await search.fill(name)
-        await self.page.wait_for_timeout(1_500)
+        # 抖音私信页存在"冷启动首次搜索返回空"的问题：页面刚打开后的第一次
+        # 搜索往往拿不到任何结果，清空输入框重搜一次即可命中。这里最多重搜 3 次。
+        result = None
+        for attempt in range(3):
+            await search.click()
+            await search.fill("")
+            if attempt:
+                await self.page.wait_for_timeout(1_000)
+            await search.fill(name)
+            await self.page.wait_for_timeout(1_500)
 
-        result = await self._search_result(name)
+            result = await self._search_result(name)
+            if result is not None:
+                break
+
         if result is None:
             raise PageOperationError("搜索不到目标好友")
         await result.click(force=True)
         await self._confirm_opened(name)
-
+    
     async def _search_result(self, name: str) -> Locator | None:
         # Search mode renders a separate SearchPanel. Its "发消息" action is the
         # correct control; clicking the hidden conversation cache does not mount
